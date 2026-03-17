@@ -6,6 +6,10 @@ int main(void)
     const int screenWidth = 900;
     const int screenHeight = 600;
 
+    int crashed = 0;
+    float verticalSpeed = 0;
+    int isStalling = 0;
+
     InitWindow(screenWidth, screenHeight, "Aircraft Style HUD Simulation");
     SetTargetFPS(60);
 
@@ -25,10 +29,10 @@ int main(void)
         // --- Input ---
         float input = 0.05f;
 
+        // inverted flight
         float normalizedRoll = fmodf(roll, 360.0f);
         if (normalizedRoll < 0) normalizedRoll += 360.0f;
-
-        // inverted flight
+        
         if (normalizedRoll > 90 && normalizedRoll < 270)
         {
         if (IsKeyDown(KEY_W)) pitchVelocity -= input;
@@ -42,25 +46,94 @@ int main(void)
         if (IsKeyDown(KEY_D)) roll -= 0.6f;
         if (IsKeyDown(KEY_A)) roll += 0.6f;
 
+        
         // --- Physics ---
-       pitchVelocity += gravity;
-       pitch += pitchVelocity;
+// ===== INPUT =====
+float inputForce = 1.2f;
 
-       pitchVelocity *= damping;
-       altitude += pitch * 0.5f;
+normalizedRoll = fmodf(roll, 360.0f);
+if (normalizedRoll < 0) normalizedRoll += 360.0f;
 
-       if (pitch > 180) pitch -= 360;
-       if (pitch < -180) pitch += 360;
-       if (altitude < 0) altitude = 0;
+int inputActive = IsKeyDown(KEY_W) || IsKeyDown(KEY_S);
 
-        // Limits
-       if (pitch > 180) pitch -= 360;
-       if (pitch < -180) pitch += 360;
+// inverted control
+if (normalizedRoll > 90 && normalizedRoll < 270)
+{
+    if (IsKeyDown(KEY_W)) pitch -= inputForce;
+    if (IsKeyDown(KEY_S)) pitch += inputForce;
+}
+else
+{
+    if (IsKeyDown(KEY_W)) pitch += inputForce;
+    if (IsKeyDown(KEY_S)) pitch -= inputForce;
+}
 
-        if (roll > 360) roll -= 360;
-        if (roll < -360) roll += 360;
+// ===== ROLL =====
+if (IsKeyDown(KEY_D)) roll -= 0.6f;
+if (IsKeyDown(KEY_A)) roll += 0.6f;
 
+// ===== FREEFALL (SMOOTH & STABLE) =====
+if (!inputActive && altitude > 0)
+{
+    float target = -90.0f;
+
+    // direkt yumuşak yaklaşım (NO velocity)
+    pitch += (target - pitch) * 0.02f;
+}
+
+// ===== LIMIT =====
+if (pitch > 180) pitch -= 360;
+if (pitch < -180) pitch += 360;
+
+// ===== STALL =====
+isStalling = (fabs(pitch) > 60);
+
+// ===== ALTITUDE =====
+verticalSpeed = sinf(pitch * DEG2RAD) * 1.5f;
+altitude += verticalSpeed;
+
+if (altitude > 0)
+{
+    verticalSpeed = sinf(pitch * DEG2RAD) * 1.5f;
+    altitude += verticalSpeed;
+}
+else
+{
+    verticalSpeed = 0;
+}
+
+// ===== GROUND =====
+if (altitude < 0)
+{
+    altitude = 0;
+    verticalSpeed = 0;
+}
+    
+if (altitude <= 5 && verticalSpeed < -1.0f)
+{
+    crashed = 1;
+}
         // --- Drawing ---
+        if (crashed)
+{
+    ClearBackground(BLACK);
+
+    DrawText("CRASH", screenWidth/2 - 80, screenHeight/2 - 20, 50, RED);
+    DrawText("Press R to Restart", screenWidth/2 - 140, screenHeight/2 + 40, 20, GRAY);
+
+    if (IsKeyPressed(KEY_R))
+    {
+        pitch = 0;
+        roll = 0;
+        pitchVelocity = 0;
+        altitude = 0;
+        crashed = 0;
+    }
+
+    EndDrawing();
+    continue;
+}
+        
         BeginDrawing();
         ClearBackground(BLACK);
 
@@ -72,6 +145,11 @@ int main(void)
         DrawText(TextFormat("Roll: %.0f deg", roll), 20, 80, 20, GREEN);
         DrawText(TextFormat("Roll: %.1f", roll), 20, 50, 20, GREEN);
         DrawText("W/S Pitch   A/D Roll   ESC Quit", 20, 565, 20, GREEN);
+
+        if (isStalling)
+{
+    DrawText("STALL WARNING", screenWidth/2 - 100, 80, 30, RED);
+}
 
         // --- Artificial Horizon ---
         float angle = roll * DEG2RAD;
@@ -122,6 +200,11 @@ int main(void)
                 DrawText(TextFormat("%d", ladderPitch), (int)finalRight.x + 10, (int)finalRight.y - 10, 18, GREEN);
             }
         }
+
+        if (isStalling)
+{
+    pitchVelocity -= 0.05f;   // hard fall
+}
 
         // --- Flight Path Marker / Center Symbol ---
         DrawCircleLines(centerX, centerY, 10, GREEN);
